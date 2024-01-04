@@ -3,15 +3,23 @@ package main
 import (
 	"github.com/ZnNr/go-musthave-metrics.git/internal/flags"
 	"github.com/ZnNr/go-musthave-metrics.git/internal/handlers"
+	log "github.com/ZnNr/go-musthave-metrics.git/internal/logger"
 	"github.com/go-chi/chi/v5"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 )
 
 func main() {
+	logger, err := zap.NewDevelopment() // добавляем предустановленный логер NewDevelopment
+	if err != nil {                     // вызываем панику, если ошибка
+		panic(err)
+	}
+	defer logger.Sync()
+	log.SugarLogger = *logger.Sugar()
+
 	params := flags.Init(flags.WithAddr())
 	r := chi.NewRouter() // Создаем новый маршрутизатор с помощью chi.NewRouter()
-
+	r.Use(log.RequestLogger)
 	// Определяем маршрут для POST запроса на обновление метрики.
 	//{name} имя метрики  {value} новое значение
 	r.Post("/update/{type}/{name}/{value}", handlers.SaveMetric)
@@ -24,8 +32,13 @@ func main() {
 	// Шаблон "/" обозначает корневой путь.
 	r.Get("/", handlers.ShowMetrics)
 
-	// Запускаем сервер на порту 8080 и передаем ему созданный маршрутизатор r.
-	//log.Fatal используется для логирования и завершения программы в случае возникновения критической ошибки.
-	log.Fatal(http.ListenAndServe(params.FlagRunAddr, r))
+	log.SugarLogger.Infow(
+		"Starting server",
+		"addr", params.FlagRunAddr,
+	)
+	if err := http.ListenAndServe(params.FlagRunAddr, r); err != nil {
+		// записываем в лог ошибку, если сервер не запустился
+		log.SugarLogger.Fatalw(err.Error(), "event", "start server")
+	}
 
 }
