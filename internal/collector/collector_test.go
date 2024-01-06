@@ -199,7 +199,7 @@ func TestCollector_GetMetric(t *testing.T) {
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			value, err := Collector.GetMetric(tt.metricName, tt.metricType)
+			value, err := Collector.GetMetricByName(tt.metricName, tt.metricType)
 			if tt.expectedError == nil {
 				assert.NoError(t, err)
 			} else {

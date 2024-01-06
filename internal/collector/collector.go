@@ -43,8 +43,8 @@ func (c *collector) Collect(metricName string, metricType string, metricValue st
 	return nil
 }
 
-// GetMetric возвращает значение заданной метрики
-func (c *collector) GetMetric(metricName string, metricType string) (string, error) {
+// GetMetricByName возвращает значение заданной метрики по имени метрики
+func (c *collector) GetMetricByName(metricName string, metricType string) (string, error) {
 	switch metricType {
 	case "counter":
 		value, ok := Collector.storage.counters[metricName]

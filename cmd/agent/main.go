@@ -6,6 +6,7 @@ import (
 	"github.com/ZnNr/go-musthave-metrics.git/internal/collector"
 	"github.com/ZnNr/go-musthave-metrics.git/internal/flags"
 	"github.com/ZnNr/go-musthave-metrics.git/internal/storage"
+	"github.com/avast/retry-go"
 	"github.com/go-resty/resty/v2"
 	"golang.org/x/sync/errgroup"
 	"log"
@@ -46,26 +47,43 @@ func main() {
 }
 
 // Функция send() отправляет метрики на удаленный сервер.
-// В бесконечном цикле происходит отправка POST-запросов для обновления значений счетчиков и метрик на удаленном адресе.
-// В каждой итерации цикла происходит обращение к пакету collector для получения текущих значений счетчиков и метрик.
-// Затем выполняется отправка POST-запросов с использованием клиента resty.
-// После отправки всех метрик горутина "спит" на определенное время, заданное в параметрах (report interval).
 func send(client *resty.Client, reportTimeout int, addr string) error {
 	for {
 		for n, v := range collector.Collector.GetCounters() {
-			if _, err := client.R().
-				SetHeader("Content-Type", "text/plain").
-				Post(fmt.Sprintf("http://%s/update/counter/%s/%s", addr, n, v)); err != nil {
+			req := client.R().
+				SetHeader("Content-Type", "application/json").
+				SetBody(fmt.Sprintf(`{"id":%q, "type":"counter", "delta": %s}`, n, v))
+			if err := sendRequest(req, addr); err != nil {
 				return err
 			}
 		}
 		for n, v := range collector.Collector.GetGauges() {
-			if _, err := client.R().
-				SetHeader("Content-Type", "text/plain").
-				Post(fmt.Sprintf("http://%s/update/gauge/%s/%s", addr, n, v)); err != nil {
+			req := client.R().
+				SetHeader("Content-Type", "application/json").
+				SetBody(fmt.Sprintf(`{"id":%q, "type":"gauge", "value": %s}`, n, v))
+			if err := sendRequest(req, addr); err != nil {
 				return err
 			}
 		}
 		time.Sleep(time.Duration(reportTimeout) * time.Second)
 	}
+}
+
+func sendRequest(req *resty.Request, addr string) error {
+	err := retry.Do(
+		func() error {
+			var err error
+			_, err = req.Post(fmt.Sprintf("http://%s/update/", addr))
+			return err
+		},
+		retry.Attempts(10),
+		retry.OnRetry(func(n uint, err error) {
+			log.Printf("Retrying request after error: %v", err)
+		}),
+	)
+	if err != nil {
+		return err
+	}
+	// do something with the response
+	return nil
 }

@@ -15,21 +15,16 @@ func main() {
 		panic(err)
 	}
 	defer logger.Sync()
+
 	log.SugarLogger = *logger.Sugar()
 
 	params := flags.Init(flags.WithAddr())
-	r := chi.NewRouter() // Создаем новый маршрутизатор с помощью chi.NewRouter()
+	r := chi.NewRouter()
 	r.Use(log.RequestLogger)
-	// Определяем маршрут для POST запроса на обновление метрики.
-	//{name} имя метрики  {value} новое значение
+	r.Post("/update/", handlers.SaveMetricFromJSON)
+	r.Post("/value/", handlers.GetMetricFromJSON)
 	r.Post("/update/{type}/{name}/{value}", handlers.SaveMetric)
-
-	// Определяем маршрут для GET запроса на получение значения метрики.
-	//{name} имя метрики
 	r.Get("/value/{type}/{name}", handlers.GetMetric)
-
-	// Определяем маршрут для GET запроса на отображение всех метрик.
-	// Шаблон "/" обозначает корневой путь.
 	r.Get("/", handlers.ShowMetrics)
 
 	log.SugarLogger.Infow(
@@ -40,5 +35,4 @@ func main() {
 		// записываем в лог ошибку, если сервер не запустился
 		log.SugarLogger.Fatalw(err.Error(), "event", "start server")
 	}
-
 }

@@ -81,7 +81,7 @@ func TestSaveMetric(t *testing.T) {
 			assert.NoError(t, err, "error making HTTP request")
 			assert.Equal(t, resp.StatusCode(), tt.expectedCode)
 
-			value, err := collector.Collector.GetMetric(tt.mName, tt.mType)
+			value, err := collector.Collector.GetMetricByName(tt.mName, tt.mType)
 			if err != nil {
 				assert.EqualError(t, err, tt.expectedError.Error())
 			} else {
