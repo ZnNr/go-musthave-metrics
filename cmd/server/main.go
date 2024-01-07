@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/ZnNr/go-musthave-metrics.git/internal/compressor"
 	"github.com/ZnNr/go-musthave-metrics.git/internal/flags"
 	"github.com/ZnNr/go-musthave-metrics.git/internal/handlers"
 	log "github.com/ZnNr/go-musthave-metrics.git/internal/logger"
@@ -21,6 +22,7 @@ func main() {
 	params := flags.Init(flags.WithAddr())
 	r := chi.NewRouter()
 	r.Use(log.RequestLogger)
+	r.Use(compressor.Compress)
 	r.Post("/update/", handlers.SaveMetricFromJSON)
 	r.Post("/value/", handlers.GetMetricFromJSON)
 	r.Post("/update/{type}/{name}/{value}", handlers.SaveMetric)

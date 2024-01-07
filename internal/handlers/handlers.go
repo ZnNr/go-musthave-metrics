@@ -32,17 +32,13 @@ func SaveMetric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.WriteHeader(http.StatusOK)
 	if _, err = io.WriteString(w, ""); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	if _, err = io.WriteString(w, ""); err != nil {
-		return
-	}
-	io.WriteString(w, "")
 	w.Header().Set("content-type", "text/plain; charset=utf-8")
 	w.Header().Set("content-length", strconv.Itoa(len(metricName)))
-	w.WriteHeader(http.StatusOK)
 }
 
 func SaveMetricFromJSON(w http.ResponseWriter, r *http.Request) {
@@ -56,20 +52,13 @@ func SaveMetricFromJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var metric Metrics
+	var metric collector.MetricJSON
 	if err := json.Unmarshal(buf.Bytes(), &metric); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	metricValue := ""
-	switch metric.MType {
-	case "counter":
-		metricValue = strconv.Itoa(int(*metric.Delta))
-	case "gauge":
-		metricValue = fmt.Sprintf("%.11f", *metric.Value)
-	}
 
-	err := collector.Collector.Collect(metric.ID, metric.MType, metricValue)
+	err := collector.Collector.CollectFromJSON(metric)
 	if errors.Is(err, collector.ErrBadRequest) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -79,63 +68,11 @@ func SaveMetricFromJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := collector.Collector.GetMetricByName(metric.ID, metric.MType)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	result := Metrics{
-		ID:    metric.ID,
-		MType: metric.MType,
-	}
-	switch result.MType {
-	case "counter":
-		c, err := strconv.Atoi(updated)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		c64 := int64(c)
-		result.Delta = &c64
-	case "gauge":
-		g, err := strconv.ParseFloat(updated, 64)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		result.Value = &g
-	}
-
-	resultJSON, err := json.Marshal(result)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("content-type", "application/json")
-	if _, err = w.Write(resultJSON); err != nil {
-		return
-	}
-	w.Header().Set("content-length", strconv.Itoa(len(metric.ID)))
-	w.WriteHeader(http.StatusOK)
-}
-
-func GetMetricFromJSON(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("content-type", "application/json")
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(r.Body); err != nil {
+	resultJSON, err := collector.Collector.GetMetricJSON(metric.ID, metric.MType)
+	if errors.Is(err, collector.ErrBadRequest) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
-	var metric Metrics
-	if err := json.Unmarshal(buf.Bytes(), &metric); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	value, err := collector.Collector.GetMetricByName(metric.ID, metric.MType)
 	if errors.Is(err, collector.ErrNotFound) {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -145,29 +82,38 @@ func GetMetricFromJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err = io.WriteString(w, ""); err != nil {
+	if _, err = w.Write(resultJSON); err != nil {
 		return
 	}
-	switch metric.MType {
-	case "counter":
-		c, err := strconv.Atoi(value)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		c64 := int64(c)
-		metric.Delta = &c64
-	case "gauge":
-		g, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		metric.Value = &g
+	w.Header().Set("content-length", strconv.Itoa(len(metric.ID)))
+	w.Header().Set("content-type", "application/json")
+	w.WriteHeader(http.StatusOK)
+}
+
+func GetMetricFromJSON(w http.ResponseWriter, r *http.Request) {
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r.Body); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
-	resultJSON, err := json.Marshal(metric)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+
+	var metric collector.MetricJSON
+	if err := json.Unmarshal(buf.Bytes(), &metric); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	resultJSON, err := collector.Collector.GetMetricJSON(metric.ID, metric.MType)
+	if errors.Is(err, collector.ErrBadRequest) {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, collector.ErrNotFound) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, collector.ErrNotImplemented) {
+		w.WriteHeader(http.StatusNotImplemented)
 		return
 	}
 
@@ -175,7 +121,7 @@ func GetMetricFromJSON(w http.ResponseWriter, r *http.Request) {
 	if _, err = w.Write(resultJSON); err != nil {
 		return
 	}
-	w.Header().Set("content-length", strconv.Itoa(len(value)))
+	w.Header().Set("content-length", strconv.Itoa(len(metric.ID)))
 	w.Header().Set("content-type", "application/json")
 	w.WriteHeader(http.StatusOK)
 }
@@ -194,19 +140,17 @@ func GetMetric(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err = io.WriteString(w, ""); err != nil {
-		return
-	}
-	io.WriteString(w, "")
-	w.Header().Set("content-type", "text/plain; charset=utf-8")
-	w.Header().Set("content-length", strconv.Itoa(len(value)))
 	w.WriteHeader(http.StatusOK)
 	if _, err = io.WriteString(w, value); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("content-type", "text/plain; charset=utf-8")
+	w.Header().Set("content-length", strconv.Itoa(len(value)))
 }
 
 func ShowMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("content-type", "Content-Type: text/html; charset=utf-8")
 	if r.URL.Path != "/" {
 		http.Error(w, fmt.Sprintf("wrong path %q", r.URL.Path), http.StatusNotFound)
 		return
@@ -221,11 +165,4 @@ func ShowMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("content-type", "Content-Type: text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-}
-
-type Metrics struct {
-	ID    string   `json:"id"`              // имя метрики
-	MType string   `json:"type"`            // параметр, принимающий значение gauge или counter
-	Delta *int64   `json:"delta,omitempty"` // значение метрики в случае передачи counter
-	Value *float64 `json:"value,omitempty"` // значение метрики в случае передачи gauge
 }
